@@ -2,14 +2,15 @@
 import importlib
 import argparse
 import types
+import copy
 import sys
 import re
 import os
 
 class ExecSandbox():
 	def __init__(self, globls=None, locls=None, imports=None):
-		self.globals = globals() if globls is None else globls
-		self.locals = locals() if locls is None else locls
+		self.globals = copy.copy(globals()) if globls is None else globls
+		self.locals = copy.copy(locals()) if locls is None else locls
 		
 		if imports:
 			self.import_modules(imports)
@@ -36,12 +37,44 @@ class StaticNamespace(types.SimpleNamespace):
 	
 	def __setattr__(self, name, value):
 		if name not in self.__dict__:
-			raise AttributeError("Can't set invalid attribute '%s'" % name)
+			raise AttributeError("Can't set invalid attribute '{}'".format(name))
 		
 		return super().__setattr__(name, value)
 	
 	def __delattr__(self, name):
 		raise TypeError("StaticNamespace object does not support item deletion")
+
+def readuntil(file, delimiter):
+	i = 0
+	chars = []
+	
+	if not delimiter:
+		return file.read()
+	
+	while True:
+		char = file.read(1)
+		chars.append(char)
+		
+		if char == '':
+			break
+		
+		if char == delimiter[i]:
+			i += 1
+			if i == len(delimiter):
+				break		
+		else:
+			i = 0
+	
+	return ''.join(chars)
+
+def yield_from_files(*files, delimiter="\n"):
+	for f in files:
+		while True:
+			line = readuntil(f,delimiter)
+			if line == '':
+				break
+			
+			yield (line, f)
 
 def FileReadType(filename):
 	try:
@@ -57,15 +90,15 @@ def CompileStringType(code, filename="<string>"):
 	except Exception as e:
 		raise argparse.ArgumentTypeError(e)
 
-def CompileFileType(file):
+def CompileFileType(filename):
 	try:
-		with open(file, 'r') as f:
+		with open(filename, 'r') as f:
 			return CompileStringType(f.read(), f.name)
 	except FileNotFoundError as e:
-		raise argparse.ArgumentTypeError("can't open '{}': file does not exist".format(file))
+		raise argparse.ArgumentTypeError("can't open '{}': file does not exist".format(filename))
 	except OSError as e:
-		raise argparse.ArgumentTypeError("can't open '{}': {}".format(filename, e))
-	
+		raise argparse.ArgumentTypeError(e)
+
 
 if __name__ == "__main__":
 	## PARSE ARGUMENTS ##
@@ -133,14 +166,14 @@ if __name__ == "__main__":
 	argparser_codegroup = argparser.add_mutually_exclusive_group(required=True)
 	argparser_codegroup.add_argument(
 		"-c", "--program-code",
-		help="code to run on each input line",
+		help="code to run",
 		type=CompileStringType,
 		metavar="CODE",
 		dest="program"
 	)
 	argparser_codegroup.add_argument(
 		"-f", "--program-file",
-		help="file containing code to run on each input line",
+		help="file containing code",
 		type=CompileFileType,
 		metavar="FILE",
 		dest="program"
@@ -167,7 +200,7 @@ if __name__ == "__main__":
 	
 	try:
 		exec_sandbox = ExecSandbox(
-			{"__builtins__":  __builtins__},
+			{"__builtins__": __builtins__},
 			{"_": line_data},
 			args.modules
 		)
@@ -176,7 +209,7 @@ if __name__ == "__main__":
 	
 	#alias for sandbox locals to make it easier to reference later
 	line_data = exec_sandbox.locals["_"]
-		
+	
 
 	## EXECUTE PROGRAM FOR EACH LINE ##
 	#if "-B" option given, execute given code before anything else
@@ -184,35 +217,30 @@ if __name__ == "__main__":
 		exec_sandbox(args.program_before)
 	
 	#run for each file
-	for f in args.file:
-		line_data.file = f
+	for line, line_data.file in yield_from_files(*args.file):	
+		if line_data.end:
+			break
 		
-		while not line_data.end:
-			#get current line of current file, break if end reached
-			line = f.readline()
-			if line == '':
-				break
-			
-			#increment _.line_num, starts at 0 before any lines are read
-			line_data.line_num += 1
-			
-			#set current _.line value, removing newline char(s) unless '-n' flag is set
-			line_data.line = line.rstrip(os.linesep) if args.strip else line
-			
-			#if '-f pattern' option given, split line into fields based on pattern
-			#store fields in _.line_fields list
-			if args.fieldsplit:
-				line_data.line_fields = args.fieldsplit.split(line_data.line)
-			
-			#execute given program argument
-			exec_sandbox(args.program)
-			
-			#if '-p' flag set, print _.line by default
-			if args.printlines:
-				print(
-					line_data.line,
-					end=os.linesep if args.strip else ""
-				)
+		#increment _.line_num, starts at 0 before any lines are read
+		line_data.line_num += 1
+		
+		#set current _.line value, removing newline char(s) unless '-n' flag is set
+		line_data.line = line.rstrip(os.linesep) if args.strip else line
+		
+		#if '-f pattern' option given, split line into fields based on pattern
+		#store fields in _.line_fields list
+		if args.fieldsplit:
+			line_data.line_fields = args.fieldsplit.split(line_data.line)
+		
+		#execute given program argument
+		exec_sandbox(args.program)
+		
+		#if '-p' flag set, print _.line by default
+		if args.printlines:
+			print(
+				line_data.line,
+				end=os.linesep if args.strip else ""
+			)
 	
 	if args.program_after:
 		exec_sandbox(args.program_after)
