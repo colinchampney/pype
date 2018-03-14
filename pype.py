@@ -30,24 +30,18 @@ class ExecSandbox():
 			attr = getattr(importlib.import_module(module), attr_name)
 			self.globals[attr.__name__] = attr
 
-class ProcLocals(types.SimpleNamespace):
-	def __init__(self):
-		super().__init__(
-			line = None,
-			line_num = 0,
-			line_fields = None,
-			file = None,
-			end = False
-		)
+class StaticNamespace(types.SimpleNamespace):
+	def __init__(self, **kwargs):
+		super().__init__(**kwargs)
 	
 	def __setattr__(self, name, value):
 		if name not in self.__dict__:
-			return
+			raise AttributeError("Can't set invalid attribute '%s'" % name)
 		
 		return super().__setattr__(name, value)
 	
 	def __delattr__(self, name):
-		return
+		raise TypeError("StaticNamespace object does not support item deletion")
 
 def FileReadType(filename):
 	try:
@@ -163,17 +157,25 @@ if __name__ == "__main__":
 
 
 	## INITIALIZE EXEC SANDBOX ##
+	line_data = StaticNamespace(
+		line = None,
+		line_num = 0,
+		line_fields = None,
+		file = None,
+		end = False
+	)
+	
 	try:
 		exec_sandbox = ExecSandbox(
 			{"__builtins__":  __builtins__},
-			{"_": ProcLocals()},
+			{"_": line_data},
 			args.modules
 		)
 	except ModuleNotFoundError as e:
 		argparser.error(e)
 	
 	#alias for sandbox locals to make it easier to reference later
-	sandbox_proc = exec_sandbox.locals["_"]
+	line_data = exec_sandbox.locals["_"]
 		
 
 	## EXECUTE PROGRAM FOR EACH LINE ##
@@ -183,24 +185,24 @@ if __name__ == "__main__":
 	
 	#run for each file
 	for f in args.file:
-		sandbox_proc.file = f
+		line_data.file = f
 		
-		while not sandbox_proc.end:
+		while not line_data.end:
 			#get current line of current file, break if end reached
 			line = f.readline()
 			if line == '':
 				break
 			
 			#increment _.line_num, starts at 0 before any lines are read
-			sandbox_proc.line_num += 1
+			line_data.line_num += 1
 			
 			#set current _.line value, removing newline char(s) unless '-n' flag is set
-			sandbox_proc.line = line.rstrip(os.linesep) if args.strip else line
+			line_data.line = line.rstrip(os.linesep) if args.strip else line
 			
 			#if '-f pattern' option given, split line into fields based on pattern
 			#store fields in _.line_fields list
 			if args.fieldsplit:
-				sandbox_proc.line_fields = args.fieldsplit.split(sandbox_proc.line)
+				line_data.line_fields = args.fieldsplit.split(line_data.line)
 			
 			#execute given program argument
 			exec_sandbox(args.program)
@@ -208,7 +210,7 @@ if __name__ == "__main__":
 			#if '-p' flag set, print _.line by default
 			if args.printlines:
 				print(
-					sandbox_proc.line,
+					line_data.line,
 					end=os.linesep if args.strip else ""
 				)
 	
