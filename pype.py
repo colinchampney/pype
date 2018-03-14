@@ -85,7 +85,8 @@ if __name__ == "__main__":
 	argparser.add_argument(
 		"-n", "--nostrip",
 		help="don't automatically strip newline characters from the end of each line",
-		action="store_true"
+		action="store_false",
+		dest="strip"
 	)
 	argparser.add_argument(
 		"-i", "--import",
@@ -194,7 +195,7 @@ if __name__ == "__main__":
 			sandbox_proc.line_num += 1
 			
 			#set current _.line value, removing newline char(s) unless '-n' flag is set
-			sandbox_proc.line = line.rstrip(os.linesep) if not args.nostrip else line
+			sandbox_proc.line = line.rstrip(os.linesep) if args.strip else line
 			
 			#if '-f pattern' option given, split line into fields based on pattern
 			#store fields in _.line_fields list
@@ -208,7 +209,7 @@ if __name__ == "__main__":
 			if args.printlines:
 				print(
 					sandbox_proc.line,
-					end=os.linesep if not args.nostrip else ""
+					end=os.linesep if args.strip else ""
 				)
 	
 	if args.program_after:
