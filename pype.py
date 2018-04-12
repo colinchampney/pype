@@ -200,15 +200,12 @@ if __name__ == "__main__":
 	
 	try:
 		exec_sandbox = ExecSandbox(
-			{"__builtins__": __builtins__},
+			{},
 			{"_": line_data},
 			args.modules
 		)
 	except ModuleNotFoundError as e:
 		argparser.error(e)
-	
-	#alias for sandbox locals to make it easier to reference later
-	line_data = exec_sandbox.locals["_"]
 	
 
 	## EXECUTE PROGRAM FOR EACH LINE ##
