@@ -1,80 +1,30 @@
 #!/usr/bin/env python3
-import importlib
+import functools
 import argparse
-import types
-import copy
 import sys
 import re
 import os
+from yieldfile import readuntil, yield_from_files, Content
+from StaticNamespace import StaticNamespace
+from ExecSandbox import ExecSandbox
 
-class ExecSandbox():
-	def __init__(self, globls=None, locls=None, imports=None):
-		self.globals = copy.copy(globals()) if globls is None else globls
-		self.locals = copy.copy(locals()) if locls is None else locls
-		
-		if imports:
-			self.import_modules(imports)
+def re_partition(pattern, string):
+	re_search = None
 	
-	def __call__(self, codeobj):
-		return self.exec(codeobj)
+	if isinstance(pattern, re._pattern_type):
+		re_search = pattern.search
+	else:
+		re_search = functools.partial(re.search, pattern)
 	
-	def exec(self, codeobj):
-		return exec(codeobj, self.globals, self.locals)
+	match = re_search(string)
+	if not match:
+		return (string, None, None)
 	
-	def import_modules(self, modules):
-		for mod_str in modules:
-			mod = importlib.import_module(mod_str)
-			self.globals[mod.__name__] = mod
-	
-	def import_from_module(self, module, attrs):
-		for attr_name in attrs:
-			attr = getattr(importlib.import_module(module), attr_name)
-			self.globals[attr.__name__] = attr
-
-class StaticNamespace(types.SimpleNamespace):
-	def __init__(self, **kwargs):
-		super().__init__(**kwargs)
-	
-	def __setattr__(self, name, value):
-		if name not in self.__dict__:
-			raise AttributeError("Can't set invalid attribute '{}'".format(name))
-		
-		return super().__setattr__(name, value)
-	
-	def __delattr__(self, name):
-		raise TypeError("StaticNamespace object does not support item deletion")
-
-def readuntil(file, delimiter):
-	i = 0
-	chars = []
-	
-	if not delimiter:
-		return file.read()
-	
-	while True:
-		char = file.read(1)
-		chars.append(char)
-		
-		if char == '':
-			break
-		
-		if char == delimiter[i]:
-			i += 1
-			if i == len(delimiter):
-				break		
-		else:
-			i = 0
-	
-	return ''.join(chars)
-
-def yield_from_files(*files, delimiter="\n"):
-	for f in files:
-		while True:
-			line = readuntil(f,delimiter)
-			if line == '':
-				break
-			
-			yield (line, f)
+	return (
+		string[:match.start()],
+		match.group(),
+		string[match.end():]
+	)
 
 def FileReadType(filename):
 	try:
@@ -99,9 +49,7 @@ def CompileFileType(filename):
 	except OSError as e:
 		raise argparse.ArgumentTypeError(e)
 
-
-if __name__ == "__main__":
-	## PARSE ARGUMENTS ##
+def parse_arguments(*args):
 	argparser = argparse.ArgumentParser(prog="pype")
 	
 	argparser.add_argument(
@@ -122,6 +70,12 @@ if __name__ == "__main__":
 		default=[],
 		metavar="MODULE",
 		dest="modules"
+	)
+	argparser.add_argument(
+		"-l", "--linesep",
+		help="the characters that denote the end of a line (default behavior is Python's standard universal newline handling)",
+		default=None,
+		metavar="CHAR(S)",
 	)
 	argparser.add_argument(
 		"-F", "--fieldsplit",
@@ -186,61 +140,95 @@ if __name__ == "__main__":
 		default=[sys.stdin]
 	)
 
-	args = argparser.parse_args()
+	return argparser.parse_args(args or None)
+	
+
+if __name__ == "__main__":
+	## PARSE ARGUMENTS ##
+	args = parse_arguments()
 
 
 	## INITIALIZE EXEC SANDBOX ##
+	#set up line data namespace for user program
 	line_data = StaticNamespace(
-		line = None,
-		line_num = 0,
+		line        = None,
+		line_num    = 0,
 		line_fields = None,
-		file = None,
-		end = False
+		file        = None,
+		end         = False
 	)
 	
+	#create ExecSandbox object with line data namespace in locals
+	exec_sandbox = ExecSandbox(
+		{},
+		{"_": line_data},
+	)
+	
+	#try to import specified modules
 	try:
-		exec_sandbox = ExecSandbox(
-			{},
-			{"_": line_data},
-			args.modules
-		)
+		exec_sandbox.import_modules(args.modules)
 	except ModuleNotFoundError as e:
 		argparser.error(e)
 	
+	
+	## COMPILE REGULAR EXPRESSIONS FOR LINE ENDINGS ##
+	line_sep = None
+	if args.strip:
+		#if args.linesep is None, assume Python's universal newline handling is being used
+		if args.linesep is None:
+			line_sep = re.compile(r"\n$")
+		else:
+			line_sep = re.compile(f"{re.escape(args.linesep)}$")
+			
 
-	## EXECUTE PROGRAM FOR EACH LINE ##
+	## EXECUTE USER PROGRAM ##
 	#if "-B" option given, execute given code before anything else
 	if args.program_before:
 		exec_sandbox(args.program_before)
 	
-	#run for each file
-	for line, line_data.file in yield_from_files(*args.file):	
+	#execute user program for each line in each file
+	for line, line_data.file in yield_from_files(*args.file, delimiter=args.linesep):
+		#if input code has set _.end, end loop
 		if line_data.end:
 			break
 		
 		#increment _.line_num, starts at 0 before any lines are read
 		line_data.line_num += 1
 		
-		#set current _.line value, removing newline char(s) unless '-n' flag is set
-		line_data.line = line.rstrip(os.linesep) if args.strip else line
+		#perform separation of line end if -n is not set
+		line_begin = None
+		line_end = None
+		if args.strip:
+			line_begin, line_end, _ = re_partition(line_sep, line)
 		
-		#if '-f pattern' option given, split line into fields based on pattern
+		#set current _.line value, removing line end char(s) unless '-n' flag is set
+		line_data.line = line_begin if args.strip else line
+		
+		#if '-f PATTERN' option given, split line into fields based on pattern
 		#store fields in _.line_fields list
 		if args.fieldsplit:
 			line_data.line_fields = args.fieldsplit.split(line_data.line)
 		
-		#execute given program argument
+		#execute user program on current line
 		exec_sandbox(args.program)
 		
 		#if '-p' flag set, print _.line by default
 		if args.printlines:
+			#set end parameter for print function
+			#if -n was NOT given, line end was stripped. print end parameter will be line_end if it was found, otherwise empty string
+			#if -n was given, line end was not stripped. print end parameter will be empty string
+			print_end = line_end if (args.strip and line_end is not None) else ""
+			
 			print(
 				line_data.line,
-				end=os.linesep if args.strip else ""
+				end=print_end
 			)
 	
+	#if "-A" option given, execute given code after anything else
 	if args.program_after:
 		exec_sandbox(args.program_after)
 	
+	
+	## CLOSE FILES ##
 	for f in args.file:
 		f.close()
