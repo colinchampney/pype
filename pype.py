@@ -8,10 +8,14 @@ from yieldfile import readuntil, yield_from_files, Content
 from StaticNamespace import StaticNamespace
 from ExecSandbox import ExecSandbox
 
+#regular expression pattern type signature changed to re.Pattern in python 3.7
+RE_PATTERN_TYPE = getattr(re, "_pattern_type", None) or getattr(re, "Pattern")
+
 def re_partition(pattern, string):
+	"""Partitions strings into pieces based on regular expressions"""
 	re_search = None
 	
-	if isinstance(pattern, re._pattern_type):
+	if isinstance(pattern, RE_PATTERN_TYPE):
 		re_search = pattern.search
 	else:
 		re_search = functools.partial(re.search, pattern)
@@ -79,7 +83,7 @@ def parse_arguments(*args):
 	)
 	argparser.add_argument(
 		"-F", "--fieldsplit",
-		help="split each line into fields using the given pattern as a delimiter",
+		help="split each line into fields using the given regex pattern as a delimiter",
 		type=re.compile,
 		default=None,
 		metavar="PATTERN"
@@ -204,7 +208,7 @@ if __name__ == "__main__":
 		#set current _.line value, removing line end char(s) unless '-n' flag is set
 		line_data.line = line_begin if args.strip else line
 		
-		#if '-f PATTERN' option given, split line into fields based on pattern
+		#if '-F PATTERN' option given, split line into fields based on pattern
 		#store fields in _.line_fields list
 		if args.fieldsplit:
 			line_data.line_fields = args.fieldsplit.split(line_data.line)
