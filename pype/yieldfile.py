@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
 import collections
 import argparse
+import enum
 import sys
 import os
 import re
 
-Content = collections.namedtuple("Content", ["line", "file"])
+FileContent = collections.namedtuple("FileContent", ["record", "file"])
 
 def readuntil(file, delimiter):
 	"""
@@ -46,16 +47,16 @@ def readuntil(file, delimiter):
 
 def yield_from_files(*files, delimiter=None):
 	"""
-	Yield one line at a time from each given file handle. Lines are yielded in a tuple alongside the handle object of their associated file.
-	If the delimiter option is set, lines will be delimited by the given string. Universal newline mode is used otherwise.
+	Yield one record at a time from each given file handle. Records are yielded in a tuple alongside the handle object of their associated file.
+	If the delimiter option is set, records will be delimited by the given string. Universal newline mode is used otherwise.
 	"""
 	for f in files:
 		while True:
-			line = readuntil(f,delimiter)
-			if line == '':
+			record = readuntil(f,delimiter)
+			if record == '':
 				break
 			
-			yield Content(line, f)
+			yield FileContent(record, f)
 
 def yield_from_argv(*, chomp=True, delimiter=None, errnum=None):
 	"""
@@ -100,8 +101,8 @@ def yield_from_argv(*, chomp=True, delimiter=None, errnum=None):
 			yield content
 			continue
 		
-		#if chomp enabled, remove delimiter from end of line
-		yield Content(self.pattern_delim.sub('', content.line), content.f)
+		#if chomp enabled, remove delimiter from end of record
+		yield FileContent(self.pattern_delim.sub('', content.record), content.f)
 
 class LineIterAction(argparse.Action):
 	def __init__(self, dest, option_strings, required=False, delimiter=None, chomp=False, metavar=None, help="File(s) to yield lines from"):
@@ -123,6 +124,6 @@ class LineIterAction(argparse.Action):
 					yield content
 					continue
 				
-				yield Content(self.pattern_delim.sub('', content.line), content.file)
+				yield FileContent(self.pattern_delim.sub('', content.record), content.file)
 					
 		setattr(namespace, self.dest, iterator)

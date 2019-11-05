@@ -1,7 +1,3 @@
-#!/usr/bin/env python3
-import copy
-import importlib
-
 class ExecSandbox():
 	def __init__(self, globls=None, locls=None, imports=None):
 		self.globals = copy.copy(globals()) if globls is None else globls
