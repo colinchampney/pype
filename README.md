@@ -47,4 +47,4 @@ $ python3 pype.py -i json -i pprint -c "pprint.pprint( json.loads(_.record), com
 ```
 
 # To Do
-* add paragraph record delimiter mode
+* add support for single-line, multi-statement blocks

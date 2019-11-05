@@ -8,6 +8,11 @@ import re
 
 FileContent = collections.namedtuple("FileContent", ["record", "file"])
 
+class SpecialDelimiter(enum.Enum):
+	UNIVERSAL = enum.auto()
+	PARAGRAPH = enum.auto()
+	SLURP     = enum.auto()
+
 def readuntil(file, delimiter):
 	"""
 	Reads from file starting at its current seek position until delimiter or EOF is encountered.
@@ -16,13 +21,35 @@ def readuntil(file, delimiter):
 	"""
 	
 	#if delimiter is None, forward to readline using universal readline mode 
-	if delimiter is None:
+	if delimiter is None or delimiter == SpecialDelimiter.UNIVERSAL:
 		return file.readline()
 	
 	#if delimiter is empty string, read entire file
-	if delimiter == "":
+	if delimiter == "" or delimiter == SpecialDelimiter.SLURP:
 		return file.read()
+
+	#if delimiter is SpecialDelimiter.PARAGRAPH, read in universal newline mode until paragraph break
+	if delimiter == SpecialDelimiter.PARAGRAPH:
+		lines = []
+		paragraph_encountered = False
+		while True:
+			lastpos = file.tell()
+			line = file.readline()
+
+			if re.fullmatch('\s+', line):
+				paragraph_encountered = True
+				continue
+			elif paragraph_encountered == True:
+				file.seek(lastpos)
+				return "".join(lines)
+			
+			if line == "":
+				return "".join(lines)
+
+			lines.append(line)
+
 	
+	#normal case, read until given delimiter
 	#read from file until all characters of delimiter (or EOF) are encountered
 	i = 0       #current delimiter index
 	chars = []  #encountered character list

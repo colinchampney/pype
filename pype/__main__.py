@@ -1,12 +1,10 @@
 from pype.yieldfile import yield_from_files
 from pype.underscore import Underscore
 from pype.sandbox import ExecSandbox
+from pype.yieldfile import SpecialDelimiter
 import pype.argtypes as argt
 import pype.util
-
-import importlib
 import argparse
-import codeop
 import sys
 import re
 
@@ -25,18 +23,25 @@ argparser.add_argument(
 )
 argparser.add_argument(
 	"-i", "--import",
-	help="import the specified module. this option can be given multiple times",
+	help="import the specified module or module member. this option can be given multiple times",
 	type=argt.ImportType,
 	action="append",
 	default=[],
-	metavar="MODULE",
+	metavar="MODULE[:MEMBER][@AS]",
 	dest="imports"
 )
 argparser.add_argument(
 	"-r", "--recordsep",
 	help="the characters that denote the end of a record (default behavior is Python's standard universal newline handling)",
 	default=None,
-	metavar="CHAR(S)",
+	metavar="CHARS",
+)
+argparser.add_argument(
+	"-P", "--record-paragraph",
+	help="split into records by paragraph (i.e. blank lines)",
+	action="store_const",
+	const=SpecialDelimiter.PARAGRAPH,
+	dest="recordsep"
 )
 argparser.add_argument(
 	"-F", "--fieldsplit",
@@ -107,10 +112,13 @@ def main():
 
 	pype_globals = dict( args.imports )
 	pype_globals["system"] = pype.util.import_from("os", "system")
+	pype_globals["puts"]   = sys.stdout.write
+
+	pype_locals = { "_": pype_underscore }
 
 	pype_sandbox = ExecSandbox(
 		pype_globals,
-		{ "_": pype_underscore }
+		pype_locals
 	)
 
 	if args.program_before:
@@ -123,11 +131,11 @@ def main():
 		record_end = ""
 
 		if args.strip:
-			if args.recordsep is None:
-				record_text, record_end = pype.util.separate_newline(record_text)
-			else:
+			if isinstance(args.recordsep, str):
 				record_text = record_text[:-len(args.recordsep)]
 				record_end  = args.recordsep
+			else:
+				record_text, record_end = pype.util.separate_newline(record_text)
 
 		pype_underscore.record     = record_text
 		pype_underscore.record_end = record_end
@@ -146,29 +154,3 @@ def main():
 
 if __name__ == "__main__":
 	main()
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
