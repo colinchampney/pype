@@ -9,6 +9,6 @@ def separate_newline(line):
 
 	return line_content, line_end
 
-def import_from(module_name, component_name):
+def import_from(module_name, member_name):
 	module = import_module(module_name)
-	return getattr( module, component_name )
+	return getattr( module, member_name )
